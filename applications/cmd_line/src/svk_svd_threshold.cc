@@ -56,7 +56,7 @@
 #include <svkGEPFileReader.h>
 #include <svkGEPFileMapper.h>
 #include <svkImageAlgorithm.h>
-#include <svkMrsImageFFT.h>
+#include <svkMrsImageSVDThreshold.h>
 #ifdef WIN32
 extern "C" {
 #include <getopt.h>

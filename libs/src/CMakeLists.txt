@@ -226,6 +226,7 @@ ADD_LIBRARY(
     svkBurnResearchPixels.cc
     svkMrsImageFFT.cc
     svkMriImageFFT.cc
+    svkMrsImageSVDThreshold.cc
     svkMriZeroFill.cc
     svkMrsZeroFill.cc
     svkMrsLinearPhase.cc
