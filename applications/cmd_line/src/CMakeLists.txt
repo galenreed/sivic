@@ -618,6 +618,16 @@ TARGET_LINK_LIBRARIES(
 	${SVK_LIBS}
 )
 
+ADD_EXECUTABLE(
+    svk_svd_threshold
+    svk_svd_threshold.cc
+)
+TARGET_LINK_LIBRARIES(
+    svk_svd_threshold
+	${SVK_LIBS}
+)
+
+
 
 ADD_EXECUTABLE(
     svk_noise
