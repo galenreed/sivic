@@ -40,21 +40,29 @@
  */
 
 
-#ifndef SVK_MRS_IMAGE_FFT_H
-#define SVK_MRS_IMAGE_FFT_H
+#ifndef SVK_MRS_AUTO_PHASE_H
+#define SVK_MRS_AUTO_PHASE_H
 
+#define SWARM
+
+#include <itkPowellOptimizer.h>
+#include <itkParticleSwarmOptimizer.h>
 
 #include <vtkObject.h>
 #include <vtkObjectFactory.h>
 #include <vtkInformation.h>
-#include <vtkStreamingDemandDrivenPipeline.h>
-#include <vtkImageFourierFilter.h>
-#include <vtkImageFFT.h>
-#include <vtkImageRFFT.h>
-#include <svkImageLinearPhase.h>
-#include <svkImageFourierCenter.h>
 
-#include <svkImageInPlaceFilter.h>
+#include <svkImageData.h>
+#include <svkMrsImageData.h>
+#include <vtkStreamingDemandDrivenPipeline.h>
+#include <svkThreadedImageAlgorithm.h>
+
+#include <complex>
+#include <svkDcmHeader.h>
+
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 
 
 namespace svk {
@@ -63,105 +71,116 @@ namespace svk {
 using namespace std;
 
 
-
 /*! 
- *  Class to apply spectral or spatial FFT. If both spectral and spatial transforms are required, 
- *  then should be called multiple timw with SetFFTDomain set appropriately.  
- *  
- *  Based on reconstruction methods developed by Sarah J. Nelson, Ph.D (UCSF).  
- *  1. Nelson S.J, "Analysis of volume MRI and MR spectroscopic imaging data for the evaluation 
- *  of patients with brain tumors",  Magnetic Resonance in Medicine, 46(2), p228-239 (2001). 
- * 
- *  In development!
+ *  Algorithm for automatic phase correction of MR spectra. 
  */
-class svkMrsImageFFT : public svkImageInPlaceFilter
+class svkMRSAutoPhase : public svkThreadedImageAlgorithm
 {
 
     public:
 
-        static svkMrsImageFFT* New();
-        vtkTypeMacro( svkMrsImageFFT, svkImageInPlaceFilter);
+        vtkTypeMacro( svkMRSAutoPhase, svkThreadedImageAlgorithm);
+        //static          svkMRSAutoPhase* New();
+        
 
+        //  _0 are zero order models
+        //      MAX_PEAK_HTS_0 maximizes the peak height of a specified peak
+        //  _1 are first order models
         typedef enum {
-            SPECTRAL = 0, 
-            SPATIAL 
-        } FFTDomain;
+            UNDEFINED_PHASE_MODEL   = 0, 
+            FIRST_POINT_0           = 1, 
+            MAX_PEAK_HTS_0          = 2, 
+            MAX_PEAK_HT_ONE_PEAK_0  = 3, 
+            //MAX_GLOBAL_PEAK_HT_0, 
+            //MIN_DIFF_FROM_MAG_0, 
+            //MAX_PEAK_HT_0_ONE_PEAK, 
+            //MIN_DIFF_FROM_MAG_0_ONE_PEAK, 
+            //LAST_ZERO_ORDER_MODEL, 
+            //MAX_PEAK_HTS_1, 
+            //MIN_DIFF_FROM_MAG_1, 
+            //MAX_PEAK_HTS_01,       
+            LAST_MODEL 
+        } PhasingModel;
 
-        typedef enum {
-            FORWARD = 0, 
-            REVERSE 
-        } FFTMode;
+        //void   SetPhasingModel(svkMRSAutoPhase::phasingModel model); 
+        void                    OnlyUseSelectionBox(); 
+        
+        virtual svkImageData*   GetOutput(int port); 
 
-        void             SetUpdateExtent(int* start, int* end);
-        static void      ConvertArrayToImageComplex( vtkDataArray* array, vtkImageComplex* imageComplexArray);
-        void             SetFFTDomain( FFTDomain domain );
-        void             SetFFTMode( FFTMode mode );
-        void             SetPreCorrectCenter( bool preCorrectCenter );
-        void             SetPostCorrectCenter( bool postCorrectCenter );
-        void             SetVoxelShift( double voxelShift[3] );
-        static void      FFTShift( vtkImageComplex* dataIn, int numPoints ); 
-        static void      IFFTShift( vtkImageComplex* dataIn, int numPoints ); 
-        void             OnlyUseSelectionBox();
-        void             MaximizeVoxelsInSelectionBox();
-        void             SetVolumeCenter( double centerLPS[3] );
-        void             NormalizeTransform(); 
 
 
     protected:
 
-        svkMrsImageFFT();
-        ~svkMrsImageFFT();
+        svkMRSAutoPhase();
+        ~svkMRSAutoPhase();
 
-        virtual int     FillInputPortInformation(int port, vtkInformation* info);
-
-
-        //  Methods:
         virtual int     RequestInformation(
-                            vtkInformation* request, 
+                            vtkInformation* request,
                             vtkInformationVector** inputVector,
                             vtkInformationVector* outputVector
                         );
 
-        virtual int     RequestData(
+        virtual int     RequestData( 
                             vtkInformation* request, 
-                            vtkInformationVector** inputVector,
-                            vtkInformationVector* outputVector
+                            vtkInformationVector** inputVector, 
+                            vtkInformationVector* outputVector 
                         );
 
-        virtual int     RequestDataSpatial(
+        int             SVKRequestDataPreExec( 
                             vtkInformation* request, 
+                            vtkInformationVector** inputVector, 
+                            vtkInformationVector* outputVector 
+                        );
+        int             SVKRequestDataPostExec( 
+                            vtkInformation* request, 
+                            vtkInformationVector** inputVector, 
+                            vtkInformationVector* outputVector 
+                        );
+
+        virtual void    ThreadedRequestData(
+                            vtkInformation* request,
                             vtkInformationVector** inputVector,
                             vtkInformationVector* outputVector,
-                            vtkImageFourierFilter* fourierFilter
+                            vtkImageData*** inData,
+                            vtkImageData** outData,
+                            int extent[6],
+                            int threadId
                         );
 
-        virtual int     RequestDataSpectral(
-                            vtkInformation* request, 
-                            vtkInformationVector** inputVector,
-                            vtkInformationVector* outputVector,
-                            vtkImageFourierFilter* fourierFilter
-                        );
+        virtual void    ValidateInput(); 
 
 
-    private:
+        virtual int     FillInputPortInformation( int vtkNotUsed(port), vtkInformation* info );
+        virtual int     FillOutputPortInformation( int vtkNotUsed(port), vtkInformation* info ); 
 
-        bool            preCorrectCenter;
-        bool            postCorrectCenter;
-        bool            onlyUseSelectionBox;
-        short*          selectionBoxMask;
+        void            ZeroData(); 
+        virtual void    UpdateProvenance();
 
-        double          voxelShift[3];
-        int             updateExtent[6]; 
-        FFTDomain       domain; 
-        FFTMode         mode; 
-
-        void            UpdateOrigin(); 
-        void            PrintSpectrum( vtkImageComplex* data, int numPoints, vtkstd::string msg ); 
-        void            NormalizePhaseShift( double shift[3] );
-        void            ValidateRequest(); 
-        bool            normalizeTranform;
+        void            AutoPhaseExecute(int* outExt, int id); 
+        virtual void    AutoPhaseSpectrum( int cellID );
+        virtual void    FitPhase( int cellID ) = 0; 
+        virtual void    PrePhaseSetup() = 0;
+        virtual void    PostPhaseCleanup() = 0; 
+        void            SyncPointsFromCells(); 
+        virtual void    SetMapSeriesDescription( ); 
 
 
+        static int*     progress;
+
+
+#ifdef SWARM
+        virtual void    InitOptimizer( int cellID, itk::ParticleSwarmOptimizer::Pointer itkOptimizer ) = 0; 
+#else
+        virtual void    InitOptimizer( int cellID, itk::PowellOptimizer::Pointer itkOptimizer ) = 0; 
+#endif
+
+        int                             numTimePoints;
+        svkMRSAutoPhase::PhasingModel   phaseModelType; 
+        bool                            onlyUseSelectionBox; 
+        short*                          selectionBoxMask;
+        bool                            isSpectralFFTRequired; 
+        string                          seriesDescription; 
+        vtkDataArray*                   mapArrayZeroOrderPhase; 
 
 };
 
@@ -169,5 +188,5 @@ class svkMrsImageFFT : public svkImageInPlaceFilter
 }   //svk
 
 
-#endif //SVK_MRS_IMAGE_FFT_H
+#endif //SVK_MRS_AUTO_PHASE_H
 
